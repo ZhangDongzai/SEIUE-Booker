@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}记录 #{{ run['id'] }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>记录 #{{ run['id'] }} · {{ run['task_name'] or '（任务已删除）' }}</h1>
+    <p class="sub">{{ run['started_at'][:19].replace('T', ' ') }} · {{ '手动触发' if run['trigger'] == 'manual' else '定时触发' }}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/runs">返回列表</a>
+    <form method="post" action="/runs/{{ run['id'] }}/delete" onsubmit="return confirm('删除这条记录？')">
+      <button class="btn danger" type="submit">删除</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="grid cols-3">
+    <div>
+      <div class="small muted">结果</div>
+      <div style="margin-top:4px">
+        {% if run['status'] == 'success' %}<span class="badge ok">成功</span>
+        {% elif run['status'] == 'skipped' %}<span class="badge skip">跳过</span>
+        {% elif run['status'] == 'running' %}<span class="badge run">执行中</span>
+        {% else %}<span class="badge fail">失败</span>{% endif %}
+      </div>
+      <div class="small" style="margin-top:8px">{{ run['message'] or '—' }}</div>
+    </div>
+    <div>
+      <div class="small muted">计划时刻（站点时间）</div>
+      <div class="mono small">{{ run['planned_at'] }}</div>
+      <div class="small muted" style="margin-top:8px">实际开始</div>
+      <div class="mono small">{{ run['started_at'] }}</div>
+    </div>
+    <div>
+      <div class="small muted">结束时间</div>
+      <div class="mono small">{{ run['finished_at'] or '—' }}</div>
+      {% if run['planned_at'] and run['started_at'] %}
+      <div class="small muted" style="margin-top:8px">触发偏差</div>
+      <div class="mono small">{{ deviation }}</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if resolved.get('candidates') %}
+<div class="card">
+  <h2>解析到的候选（按优先级）</h2>
+  <table>
+    <thead><tr><th>#</th><th>场地</th><th>场地 ID</th><th>时段 ID</th><th>时段</th></tr></thead>
+    <tbody>
+    {% for c in resolved['candidates'] %}
+      <tr>
+        <td class="small">{{ loop.index }}</td>
+        <td class="small">{{ c.get('venue_name') or '—' }}</td>
+        <td class="mono small">{{ c.get('venue_id') }}</td>
+        <td class="mono small">{{ c.get('slot_id') }}</td>
+        <td class="mono small">{{ c.get('slot_start') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if resolved.get('missing_placeholders') %}
+<div class="card" style="border-color:#f5d3ce;background:#fffaf9">
+  <h2>未渲染的占位符</h2>
+  <p class="small" style="margin:0">
+    以下占位符在当前上下文中不存在，已被渲染为空串，请检查模板拼写或「额外变量」配置：
+    <span class="mono">{{ resolved['missing_placeholders']|join(', ') }}</span>
+  </p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>请求轨迹（{{ attempts|length }} 次）</h2>
+  {% if not attempts %}
+  <div class="empty">没有请求记录。</div>
+  {% endif %}
+  {% for a in attempts %}
+  <details {% if loop.last %}open{% endif %}>
+    <summary>
+      <span class="mono">#{{ a['seq'] }}</span>
+      · {{ a['venue_name'] or '—' }}
+      · <span class="badge {% if a['ok'] %}ok{% else %}fail{% endif %}">HTTP {{ a['http_status'] }}</span>
+      · {{ a['duration_ms']|round(0, 'floor')|int }} ms
+      {% if a['error'] %}· <span style="color:#c0392b">{{ a['error'][:80] }}</span>{% endif %}
+    </summary>
+    <dl class="kv">
+      <dt>方法</dt><dd class="mono">{{ a['method'] }}</dd>
+      <dt>URL</dt><dd class="mono">{{ a['url'] }}</dd>
+    </dl>
+    <div class="small muted" style="margin-bottom:4px">请求头（已渲染）</div>
+    <pre class="code">{{ a['request_headers'] }}</pre>
+    {% if a['request_body'] %}
+    <div class="small muted" style="margin:10px 0 4px">请求体（已渲染）</div>
+    <pre class="code">{{ a['request_body'] }}</pre>
+    {% endif %}
+    <div class="small muted" style="margin:10px 0 4px">响应</div>
+    <pre class="code">{{ a['response_excerpt'] or '（空）' }}</pre>
+  </details>
+  {% endfor %}
+</div>
+{% endblock %}

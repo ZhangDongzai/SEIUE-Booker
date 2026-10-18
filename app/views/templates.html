@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}模板{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>接口模板</h1>
+    <p class="sub">从浏览器「复制为 cURL」导入。查询类用于解析场地/时段 ID，下单类用于提交预约。</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/templates/new?kind=list">新建查询模板</a>
+    <a class="btn primary" href="/templates/new?kind=order">新建下单模板</a>
+  </div>
+</div>
+
+<div class="card">
+  {% if rows %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:70px">类型</th>
+        <th style="width:200px">名称</th>
+        <th style="width:70px">方法</th>
+        <th>URL</th>
+        <th style="width:90px">被引用</th>
+        <th style="width:180px">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for t in rows %}
+      <tr>
+        <td>
+          {% if t['kind'] == 'list' %}<span class="badge">查询</span>
+          {% else %}<span class="badge run">下单</span>{% endif %}
+        </td>
+        <td>
+          <a href="/templates/{{ t['id'] }}/edit">{{ t['name'] }}</a>
+          {% if t['note'] %}<div class="small muted">{{ t['note'][:60] }}</div>{% endif %}
+        </td>
+        <td class="mono small">{{ t['method'] }}</td>
+        <td class="mono small" style="word-break:break-all">{{ t['url'] }}</td>
+        <td class="small">
+          {% if t['id'] in used %}<span class="badge ok">已用</span>{% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td>
+          <div class="actions">
+            <a class="btn sm" href="/templates/{{ t['id'] }}/edit">编辑</a>
+            <form method="post" action="/templates/{{ t['id'] }}/delete"
+                  onsubmit="return confirm('删除模板「{{ t['name'] }}」？引用它的任务会解绑。')">
+              <button class="btn sm danger" type="submit">删除</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">还没有模板。</div>
+  {% endif %}
+</div>
+
+<div class="card tight">
+  <p class="small muted" style="margin:0">
+    抓包步骤见项目 <span class="mono">docs/04-抓包与模板配置指南.md</span>：打开预约页 → F12 → Network → 完成一次真实操作 → 右键该请求 → Copy → Copy as cURL (bash) → 粘贴到模板编辑页。
+  </p>
+</div>
+{% endblock %}

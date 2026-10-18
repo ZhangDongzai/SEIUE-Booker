@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}任务{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>预约任务</h1>
+    <p class="sub">一条任务 = 一个预约意图（场地优先级 + 时段 + 日期偏移 + 放号时刻）。</p>
+  </div>
+  <a class="btn primary" href="/tasks/new">新建任务</a>
+</div>
+
+<div class="card">
+  {% if rows %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:180px">任务</th>
+        <th style="width:64px">状态</th>
+        <th>目标</th>
+        <th style="width:180px">排程</th>
+        <th style="width:150px">模板</th>
+        <th style="width:230px">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>
+          <a href="/tasks/{{ row.task['id'] }}/edit">{{ display_name(row.task) }}</a>
+          <div class="small muted">
+            #{{ row.task['id'] }}
+            {% if row.task['dry_run'] %}<span class="badge skip">演练</span>{% endif %}
+          </div>
+        </td>
+        <td>
+          {% if row.task['enabled'] %}<span class="badge ok">启用</span>
+          {% else %}<span class="badge">停用</span>{% endif %}
+        </td>
+        <td class="small">
+          <div><strong>{{ row.task['venues'] or '未指定场地' }}</strong></div>
+          <div class="muted">
+            {{ row.task['slot_start'] }}–{{ row.task['slot_end'] }}
+            · 未来第 {{ row.task['day_offset'] }} 天
+          </div>
+        </td>
+        <td class="small">
+          {% if row.task['schedule_mode'] == 'once' %}
+            单次 · {{ row.task['once_at'] or '未设置' }}
+          {% else %}
+            每天 {{ row.task['open_time'] }}
+            {% if row.next %}
+              <div class="muted mono">{{ row.next.server_time }}</div>
+              <div class="countdown small" data-countdown="{{ row.next.epoch_ms }}"></div>
+            {% endif %}
+          {% endif %}
+        </td>
+        <td class="small">
+          <div>查询：{% if row.list_tpl %}{{ row.list_tpl['name'] }}{% else %}<span class="muted">未绑定</span>{% endif %}</div>
+          <div>下单：{% if row.order_tpl %}{{ row.order_tpl['name'] }}{% else %}<span style="color:#c0392b">未绑定</span>{% endif %}</div>
+        </td>
+        <td>
+          <div class="actions">
+            <form method="post" action="/tasks/{{ row.task['id'] }}/run">
+              <button class="btn sm" type="submit">立即执行</button>
+            </form>
+            <form method="post" action="/tasks/{{ row.task['id'] }}/toggle">
+              <button class="btn sm" type="submit">{% if row.task['enabled'] %}停用{% else %}启用{% endif %}</button>
+            </form>
+            <a class="btn sm" href="/tasks/{{ row.task['id'] }}/edit">编辑</a>
+            <form method="post" action="/tasks/{{ row.task['id'] }}/delete"
+                  onsubmit="return confirm('删除任务「{{ display_name(row.task) }}」及其全部执行记录？该操作不可撤销。')">
+              <button class="btn sm danger" type="submit">删除</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">还没有任务。点击右上角「新建任务」开始。</div>
+  {% endif %}
+</div>
+
+<div class="card tight">
+  <p class="small muted" style="margin:0">
+    提醒：修改任务后会自动重新排程；同一任务不会并发执行。建议预约成功后停用任务，避免重复预约。
+  </p>
+</div>
+{% endblock %}

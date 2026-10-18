@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% block title %}设置{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>设置</h1>
+    <p class="sub">会话凭据加密存储在本机数据目录，不会上传到任何第三方。</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>① 一键导入（推荐，只需一次粘贴）</h2>
+  <p class="small muted" style="margin-top:0">
+    浏览器里成功预约一次后：F12 → Network → 找到 <span class="mono">order-venues/…/orders</span> 这条 <b>POST</b> 请求
+    → 右键「Copy → Copy as cURL (bash)」→ 粘贴到下面。<br>
+    程序会自动拆出身份令牌存进「会话」，并把 URL 与请求体转成带占位符的「下单模板」，日期/时段/场地每次执行时再注入。
+  </p>
+  <form method="post" action="/settings/quickstart">
+    <div class="field">
+      <textarea name="raw" rows="8" class="mono" placeholder="curl --url 'https://api.seiue.com/scms/venue/order-venues/2953/orders' -X POST -H 'authorization: Bearer eyJ...' --data-raw '{...}'"></textarea>
+      <div class="hint">
+        不要粘贴上面的 OPTIONS 预检请求（浏览器的探路请求），要选那个带 <span class="mono">--data-raw</span> 的同类请求。
+      </div>
+    </div>
+    <button class="btn primary" type="submit">解析并生成配置</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>② 会话状态</h2>
+  {% if token.present %}
+    {% if token.expired %}
+    <div class="toast err" style="margin:0 0 12px">令牌已过期，必须重新导入（站点签发的是 24 小时令牌）。</div>
+    {% elif token.warn %}
+    <div class="toast warn" style="margin:0 0 12px">{{ token_text }}，建议尽快重新导入。</div>
+    {% endif %}
+    <div class="grid cols-3 small" style="margin-bottom:12px">
+      <div>
+        <div class="muted">剩余有效期</div>
+        <div class="mono">
+          {% if token.exp is defined and token.exp %}
+            {% if token.expired %}已过期{% else %}{{ (token.remain_seconds // 3600) }} 小时 {{ (token.remain_seconds % 3600) // 60 }} 分{% endif %}
+          {% else %}未知{% endif %}
+        </div>
+      </div>
+      <div>
+        <div class="muted">过期时间</div>
+        <div class="mono">{{ token_exp_text }}</div>
+      </div>
+      <div>
+        <div class="muted">账号 / 学校</div>
+        <div class="mono">{{ token.sub or '—' }} / {{ token.school or '—' }}</div>
+      </div>
+    </div>
+  {% else %}
+    {% if token.kind == 'cookie' %}
+    <div class="toast ok" style="margin:0 0 12px">
+      已导入 Cookie 会话（没有 Bearer 令牌）。请求会直接带着 Cookie 走，不受 24 小时令牌限制——
+      只要 Cookie 没过期就一直能用。
+    </div>
+    {% else %}
+    <div class="toast err" style="margin:0 0 12px">尚未导入会话，无法发起任何请求。</div>
+    {% endif %}
+  {% endif %}
+
+  <h3>手动导入 / 替换会话</h3>
+  <p class="small muted" style="margin-top:0">
+    令牌过期时，重新走一次「一键导入」最省事；也可以只粘一段 cURL 来更新请求头（同名头会被覆盖）。
+  </p>
+  <form method="post" action="/settings/session">
+    <div class="field">
+      <textarea name="raw" rows="6" class="mono" placeholder="curl 'https://api.seiue.com/scms/venue/order-venues' -H 'authorization: Bearer eyJ...' -H 'x-school-id: 282'"></textarea>
+      <div class="hint">也接受纯文本请求头，每行一条，例如 <span class="mono">authorization: Bearer xxx</span>。</div>
+    </div>
+    <button class="btn" type="submit">保存会话</button>
+  </form>
+
+  {% if headers %}
+  <div style="margin-top:16px">
+    <div class="small muted" style="margin-bottom:6px">当前已保存的请求头（已掩码）：</div>
+    <pre class="code light">{% for k, v in headers.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>②b 令牌自动续期</h2>
+  {% if refresh.has_passport_cookie %}
+    <div class="toast ok" style="margin:0 0 12px">
+      <b>免密换令牌已开启</b>：令牌剩余不足 {{ refresh.skew // 60 }} 分钟时，用会话 Cookie 自动换新——
+      不需要密码。这是站点前端自己走的通道。
+    </div>
+  {% elif refresh.token.kind == 'cookie' %}
+    <div class="toast ok" style="margin:0 0 12px">
+      当前是 Cookie 会话，不存在 24 小时过期问题。
+      只要 Cookie 还在有效期内，程序就能一直跑。
+    </div>
+  {% elif refresh.auto %}
+    <div class="toast ok" style="margin:0 0 12px">
+      自动续期已开启：剩余不足 {{ refresh.skew // 60 }} 分钟时自动换新，每 {{ refresh.check_seconds // 60 }} 分钟巡检一次。
+    </div>
+  {% else %}
+    <div class="toast" style="margin:0 0 12px">
+      <b>还没配置自动续期。</b>令牌 24 小时过期后必须手动重贴 cURL。
+      最省事的做法是填上面的「会话 Cookie」——填一次，程序以后自己换新令牌。
+    </div>
+  {% endif %}
+
+  <div class="grid cols-2 small" style="margin-bottom:12px">
+    <div>
+      <div class="muted">会话 Cookie（免密换令牌）</div>
+      <div class="mono">
+        {% if refresh.has_passport_cookie %}已保存 {{ refresh.passport_cookie_mask }}{% else %}未配置{% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="muted">上次续期</div>
+      <div class="mono">{{ refresh.state.at or '—' }}</div>
+    </div>
+  </div>
+  <div class="grid cols-2 small" style="margin-bottom:12px">
+    <div></div>
+    <div>
+      <div class="muted">结果</div>
+      <div class="small">
+        {% if refresh.state.ok is defined %}
+          {% if refresh.state.ok %}<span class="badge ok">成功</span>{% else %}<span class="badge fail">失败</span>{% endif %}
+          <span class="muted">{{ refresh.state.message or '' }}</span>
+        {% else %}<span class="muted">尚未续期过</span>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <form method="post" action="/settings/passport-cookie">
+    <div class="field">
+      <label for="passport_cookie">粘贴会话 Cookie（推荐，一次配置长期有效）</label>
+      <textarea id="passport_cookie" name="passport_cookie" class="mono" rows="2"
+                autocomplete="off" spellcheck="false"
+                placeholder="PHPSESSID=xxxxxxxx&#10;或 名=值; 名2=值2"></textarea>
+      <div class="hint">
+        站点前端不保存长效凭据（localStorage 里只有会过期的 accessToken），
+        它换新令牌走的是：<span class="mono">POST {{ refresh.passport_url }}</span>，
+        带 <span class="mono">passport</span> 域的 HttpOnly 会话 Cookie + <span class="mono">client_id={{ refresh.passport_client_id }}</span>。
+        <b>这条路已在浏览器里实测通过（HTTP 201，直接签到新令牌）。</b><br>
+        取法：F12 → Application → Cookies → <span class="mono">https://passport.seiue.com</span> → 选中那一两条 →
+        复制，直接整段粘过来就行：<b>「Name=Value」「Name⇥Value」（面板复制的制表符形态）、
+        「cookie: 名=值」、多条各占一行</b>，程序都会自动整理。<br>
+        该接口无 Cookie 时返回 <span class="mono">401 Login required</span>，所以填错会明确报错，不会静默失败；
+        服务端轮换 Cookie 时程序会自动存下新值。留空提交则清除。
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" type="submit">保存会话 Cookie</button>
+    </div>
+  </form>
+
+  <form method="post" action="/settings/refresh-now" style="margin-top:10px">
+    <button class="btn" type="submit">立即续期并校验</button>
+    <span class="small muted" style="margin-left:8px">
+      用会话 Cookie 免密换新，再用新令牌拉一次场地清单，
+      200 才算成功；失败会保留旧令牌。
+    </span>
+  </form>
+
+  <details style="margin-top:12px">
+    <summary class="small">续期接口细节（排错用）</summary>
+    <pre class="code light" style="margin-top:0">POST {{ refresh.passport_url }}
+Content-Type: application/x-www-form-urlencoded
+Cookie: &lt;passport 域的会话 Cookie&gt;
+
+response_type=token
+&amp;client_id={{ refresh.passport_client_id }}</pre>
+    <div class="hint">无 Cookie 时返回 <span class="mono">401 Login required</span>；这个域允许带凭据跨域（ACAO: true），所以浏览器前端才这么用。</div>
+  </details>
+
+  <details style="margin-top:12px">
+    <summary class="small">排错：跑一次凭据扫描（看浏览器里到底存了什么）</summary>
+    <div class="small muted" style="margin:8px 0">
+      在已登录的预约页面按 F12 → Console，粘贴下面这段回车。它不读密码、不写数据，
+      会告出：cookie / storage 里到底有什么、JWT 在哪、以及<b>免密换令牌通道通不通</b>。
+      完整版（输出更全，含 refresh 候选识别）：<a href="/static/sniff.js" target="_blank" class="mono">/static/sniff.js</a>
+    </div>
+    <pre class="code light" style="user-select:all">(async()=&gt;{const A='https://api.seiue.com',m=v=&gt;!v?'(空)':v.length&lt;=16?'****('+v.length+')':v.slice(0,6)+'…'+v.slice(-4)+'('+v.length+')';
+console.log('cookie:');document.cookie.split(';').map(s=&gt;s.trim()).filter(Boolean).forEach(s=&gt;{const i=s.indexOf('=');console.log('  '+s.slice(0,i)+' '+m(s.slice(i+1)))});
+for(const n of ['localStorage','sessionStorage']){const S=window[n];console.log(n+':');for(let i=0;i&lt;S.length;i++){const k=S.key(i);console.log('  '+k+' '+m(S.getItem(k)||''))}}
+const r=await fetch(A+'/scms/venue/order-venues',{credentials:'include'});console.log('仅Cookie拉清单: HTTP',r.status)})()</pre>
+    <div class="hint">
+      判读方式：最后一行若为 <span class="mono">HTTP 200</span>，说明令牌有效；
+      若为 <span class="mono">401</span>，说明令牌过期，需要重新导入 cURL 或填入新的会话 Cookie。
+    </div>
+  </details>
+</div>
+
+<div class="card">
+  <h2>③ 场地清单</h2>
+  <p class="small muted" style="margin-top:0">
+    从站点读取「可预约场地」及其规则（提前天数、是否需要审批）。同步后，任务页就能直接勾选场地，不用记 ID。
+  </p>
+  <form method="post" action="/settings/venues">
+    <div class="flex-between" style="align-items:flex-end">
+      <div class="field" style="flex:1;margin-right:12px;margin-bottom:0">
+        <label for="venues_url">清单地址</label>
+        <input type="text" id="venues_url" name="venues_url" value="{{ venues_url or 'https://api.seiue.com/scms/venue/order-venues' }}" class="mono">
+        <div class="hint">{% if venues_at %}上次同步：{{ venues_at }}{% else %}尚未同步{% endif %}</div>
+      </div>
+      <button class="btn" type="submit">同步场地</button>
+    </div>
+  </form>
+  {% if venues %}
+  <div style="margin-top:14px" class="small">
+    <table class="table compact">
+      <thead><tr><th>ID</th><th>名称</th><th>提前天数</th><th>审批</th><th>限额</th><th>状态</th></tr></thead>
+      <tbody>
+      {% for v in venues %}
+        <tr>
+          <td class="mono">{{ v.id }}</td>
+          <td>{{ v.name }}</td>
+          <td>{{ v.max_order_days or '—' }}</td>
+          <td>{% if v.need_approval %}<span class="badge warn">需审批</span>{% else %}<span class="badge ok">直接通过</span>{% endif %}</td>
+          <td>{{ v.time_limit or '—' }}</td>
+          <td>{{ v.open_status or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>④ 会话自检</h2>
+  <div class="flex-between" style="align-items:flex-end">
+    <form method="post" action="/settings/check" style="flex:1;margin-right:12px">
+      <div class="field" style="margin-bottom:0">
+        <label for="check_url">校验地址</label>
+        <input type="text" id="check_url" name="check_url" value="{{ check_url }}" class="mono">
+        <div class="hint">默认用场地清单接口：带有效令牌返回 200，令牌失效返回 401。</div>
+      </div>
+    </form>
+    <form method="post" action="/settings/check">
+      <input type="hidden" name="check_url" value="{{ check_url }}">
+      <button class="btn" type="submit">立即自检</button>
+    </form>
+  </div>
+  {% if last_check %}
+  <div style="margin-top:14px" class="small">
+    上次自检：{{ last_check.at }} ·
+    <span class="badge {% if last_check.ok %}ok{% else %}fail{% endif %}">HTTP {{ last_check.status }}</span>
+    · {{ last_check.duration_ms }} ms
+    {% if last_check.error %}· <span style="color:#c0392b">{{ last_check.error }}</span>{% endif %}
+    {% if last_check.excerpt %}
+    <pre class="code light" style="margin-top:8px">{{ last_check.excerpt }}</pre>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>时钟</h2>
+  <div class="grid cols-3">
+    <div>
+      <div class="small muted">站点时间</div>
+      <div class="mono">{{ offset.server_time }}</div>
+    </div>
+    <div>
+      <div class="small muted">偏移（站点 − 本机）</div>
+      <div class="mono">{{ offset.offset_ms }} ms</div>
+    </div>
+    <div>
+      <div class="small muted">状态</div>
+      <div class="mono">
+        {% if offset.calibrated %}已校准（{{ offset.age_s }} 秒前）{% else %}未校准{% endif %}
+      </div>
+    </div>
+  </div>
+  <form method="post" action="/settings/calibrate" style="margin-top:14px">
+    <button class="btn" type="submit">重新校准</button>
+  </form>
+  <div class="hint">每次调度到点前也会自动重校准一次（间隔 ≥10 分钟），因此 NAS 只需开启 NTP 即可。</div>
+</div>
+
+<div class="card">
+  <h2>运行环境</h2>
+  <div class="grid cols-3 small">
+    <div>
+      <div class="muted">数据目录</div>
+      <div class="mono">{{ data_dir }}</div>
+    </div>
+    <div>
+      <div class="muted">时区</div>
+      <div class="mono">{{ tz_name }}</div>
+    </div>
+    <div>
+      <div class="muted">访问口令</div>
+      <div class="mono">{{ '已开启' if auth_enabled else '未设置（内网使用）' }}</div>
+    </div>
+  </div>
+  <div class="hint" style="margin-top:12px">
+    备份时请同时保留 <span class="mono">app.db</span> 与 <span class="mono">secret.key</span>，否则已保存的会话无法解密。
+  </div>
+</div>
+
+<div class="card tight">
+  <p class="small muted" style="margin:0">
+    使用范围：仅限本人账号的本人预约。本程序不包含验证码破解、多账号、代理池或高频重试，请遵守学校场馆管理规定。
+  </p>
+</div>
+{% endblock %}

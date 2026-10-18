@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>{% block title %}仪表盘{% endblock %} · {{ app_name }}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="dot"></span>{{ app_name }}<span class="ver">v{{ version }}</span></div>
+  {% if page != 'login' %}
+  <nav>
+    <a href="/" class="{% if page == 'dashboard' %}active{% endif %}">仪表盘</a>
+    <a href="/tasks" class="{% if page == 'tasks' %}active{% endif %}">任务</a>
+    <a href="/templates" class="{% if page == 'templates' %}active{% endif %}">模板</a>
+    <a href="/runs" class="{% if page == 'runs' %}active{% endif %}">记录</a>
+    <a href="/settings" class="{% if page == 'settings' %}active{% endif %}">设置</a>
+  </nav>
+  {% if auth_enabled %}
+  <form method="post" action="/logout"><button class="btn link" type="submit">退出</button></form>
+  {% endif %}
+  {% endif %}
+</header>
+<main>
+  {% if ok %}<div class="toast ok">{{ ok }}</div>{% endif %}
+  {% if err %}<div class="toast err">{{ err }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

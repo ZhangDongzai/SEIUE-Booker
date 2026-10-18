@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}执行记录{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>执行记录</h1>
+    <p class="sub">每次调度或手动触发的完整留痕：解析结果、请求原文、响应原文。</p>
+  </div>
+  <a class="btn" href="/">返回仪表盘</a>
+</div>
+
+<div class="card">
+  {% if rows %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:60px">#</th>
+        <th style="width:150px">开始时间</th>
+        <th style="width:170px">任务</th>
+        <th style="width:70px">触发</th>
+        <th style="width:70px">结果</th>
+        <th>说明</th>
+        <th style="width:60px"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td class="mono small">{{ r['id'] }}</td>
+        <td class="mono small">{{ r['started_at'][:19].replace('T', ' ') }}</td>
+        <td class="small">{{ r['task_name'] or '（已删除）' }}</td>
+        <td class="small">{{ '手动' if r['trigger'] == 'manual' else '定时' }}</td>
+        <td>
+          {% if r['status'] == 'success' %}<span class="badge ok">成功</span>
+          {% elif r['status'] == 'skipped' %}<span class="badge skip">跳过</span>
+          {% elif r['status'] == 'running' %}<span class="badge run">执行中</span>
+          {% else %}<span class="badge fail">失败</span>{% endif %}
+        </td>
+        <td class="small">{{ r['message'] or '—' }}</td>
+        <td><a class="btn sm" href="/runs/{{ r['id'] }}">详情</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">暂无记录。</div>
+  {% endif %}
+</div>
+{% endblock %}

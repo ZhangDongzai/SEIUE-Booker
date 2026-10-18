@@ -1,0 +1,17 @@
+# 运行时依赖 —— 全部是纯 Python 包（py3-none-any），
+# 在 Termux / Android（bionic libc）上无需编译任何东西，任何平台共用这一份。
+#
+# 不再需要的两个重依赖（重要，别加回来）：
+#   fastapi      → 依赖 pydantic，其 pydantic-core 是 Rust 扩展，Termux 上装不了；
+#                  本项目改用 starlette（FastAPI 的底座），功能等价，见 app/webcore.py
+#   cryptography → Rust + OpenSSL 扩展，Termux 上要装 Rust 工具链编译；
+#                  本项目改用标准库 hmac/hashlib 实现加密，见 app/crypto.py
+starlette>=0.37,<1.0
+uvicorn>=0.30,<1.0
+jinja2>=3.1,<4.0
+python-multipart>=0.0.9
+httpx>=0.27,<1.0
+jmespath>=1.0,<2.0
+itsdangerous>=2.2
+# 时区库：Android 与 Windows 不一定自带 IANA 时区数据，装它最省心
+tzdata>=2024.1

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}登录{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <div class="card">
+    <h1>访问口令</h1>
+    <p class="sub">该服务保存了你的预约会话，建议设置口令后仅在可信网络访问。</p>
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next }}">
+      <div class="field">
+        <label for="password">口令</label>
+        <input type="password" id="password" name="password" autofocus autocomplete="current-password">
+      </div>
+      <button class="btn primary" type="submit" style="width:100%">进入</button>
+    </form>
+  </div>
+  <p class="footer-note">口令由环境变量 <span class="mono">APP_PASSWORD</span> 配置。</p>
+</div>
+{% endblock %}

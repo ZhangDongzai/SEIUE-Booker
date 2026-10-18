@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}新建任务{% else %}编辑任务{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if is_new %}新建预约任务{% else %}编辑：{{ display_name(task) }}{% endif %}</h1>
+    <p class="sub">
+      选一个具体的预约日期。站点可预约未来 {{ window_days }} 天内的场地：
+      <b>日期在窗口内就立即执行</b>；还没进窗口就等到窗口开启那一刻自动执行。
+    </p>
+  </div>
+  <a class="btn" href="/tasks">返回列表</a>
+</div>
+
+<form method="post" action="/tasks/save">
+  <input type="hidden" name="id" value="{{ task['id'] or '' }}">
+
+  <fieldset>
+    <legend>基本信息</legend>
+    <div class="row2">
+      <div class="field">
+        <label for="auto_name">任务名称（自动生成，无需填写）</label>
+        <div id="auto_name" class="mono" style="padding:7px 10px;border:1px dashed var(--line,#d8dde6);border-radius:6px">{{ display_name(task) }}</div>
+        <div class="hint">由「目标日期 + 时段」决定，改下面的日期或时段会自动更新。</div>
+      </div>
+      <div class="field">
+        <label>开关</label>
+        <label class="check" style="margin-bottom:8px">
+          <input type="checkbox" name="enabled" {% if task['enabled'] %}checked{% endif %}>
+          <span>启用（停用后不会自动执行）</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="dry_run" {% if task['dry_run'] %}checked{% endif %}>
+          <span>演练模式（只解析候选，不提交下单请求）</span>
+        </label>
+      </div>
+    </div>
+  </fieldset>
+
+  {% set selected = (task['venue_ids'] or '').split(',') %}
+  <fieldset>
+    <legend>目标场地与时段</legend>
+    {% if venues %}
+    <div class="field">
+      <label>选择场地<span class="req">*</span></label>
+      <div class="chips">
+        {% for v in venues %}
+        <label class="chip">
+          <input type="checkbox" name="venue_ids" value="{{ v['id'] }}" {% if v['id']|string in selected %}checked{% endif %}>
+          <span>{{ v['name'] or v['id'] }}{% if v['need_approval'] %}<em class="tag">需审批</em>{% endif %}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="hint">
+        清单同步于 {{ venues_at or '—' }}，共 {{ venues|length }} 个。<a href="/settings">到设置页重新同步</a>。
+        勾选多个时按页面顺序依次尝试，失败自动换下一块。
+      </div>
+    </div>
+    {% else %}
+    <div class="field">
+      <label>选择场地<span class="req">*</span></label>
+      <div class="hint">还没有场地清单，先到<a href="/settings">设置页</a>配置会话 Cookie（会自动同步），或在下面直接填场地 ID。</div>
+    </div>
+    {% endif %}
+    <div class="hint" style="margin:-4px 0 12px">
+      当前目标场地：<span class="mono">{{ task['venue_ids'] or '（未配置）' }}</span>
+    </div>
+
+    <div class="row3">
+      <div class="field">
+        <label for="target_date">预约日期<span class="req">*</span></label>
+        <input type="date" id="target_date" name="target_date"
+               value="{{ task['target_date'] or '' }}"
+               min="{{ today }}" max="{{ max_date }}" required>
+        <div class="hint">
+          今天起 {{ window_days }} 天内可直接预约；更远的日期会在窗口开启时自动执行。
+        </div>
+      </div>
+      <div class="field">
+        <label for="slot_start">时段开始<span class="req">*</span></label>
+        <input type="text" id="slot_start" name="slot_start" value="{{ task['slot_start'] or '19:00' }}" placeholder="19:00">
+      </div>
+      <div class="field">
+        <label for="slot_end">时段结束<span class="req">*</span></label>
+        <input type="text" id="slot_end" name="slot_end" value="{{ task['slot_end'] or '20:00' }}" placeholder="20:00">
+      </div>
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label for="capacity">使用人数</label>
+        <input type="number" id="capacity" name="capacity" value="{{ task['capacity'] or 2 }}" min="1" max="20">
+      </div>
+      <div class="field">
+        <label for="description">预约备注</label>
+        <input type="text" id="description" name="description" value="{{ task['description'] or '' }}" placeholder="打球">
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>执行方式</legend>
+    <div class="field">
+      <label for="open_time">窗口开启时刻（站点时间）</label>
+      <input type="text" id="open_time" name="open_time" value="{{ task['open_time'] or '00:00:30' }}" placeholder="00:00:30">
+      <div class="hint">
+        只在「日期还没进窗口」时起作用：到了那天这个时刻开始自动尝试。
+        日期已在窗口内则忽略此项，保存后立即执行。默认 <span class="mono">00:00:30</span>。
+      </div>
+    </div>
+    <div class="row3">
+      <div class="field">
+        <label for="prewarm_ms">预热提前量（毫秒）</label>
+        <input type="number" id="prewarm_ms" name="prewarm_ms" value="{{ task['prewarm_ms'] }}" min="0" max="120000" step="500">
+        <div class="hint">到点前多久做一次列表查询，用于解析 ID 并保持连接。</div>
+      </div>
+      <div class="field">
+        <label for="max_attempts">最大轮数</label>
+        <input type="number" id="max_attempts" name="max_attempts" value="{{ task['max_attempts'] }}" min="1" max="50">
+      </div>
+      <div class="field">
+        <label for="interval_ms">轮间隔（毫秒）</label>
+        <input type="number" id="interval_ms" name="interval_ms" value="{{ task['interval_ms'] }}" min="0" max="60000" step="50">
+        <div class="hint">不建议低于 300ms，避免触发风控。</div>
+      </div>
+    </div>
+    <div class="hint">
+      约到即自动停用该任务（目标日期只有一天，无需重复预约）；没约到会每隔一段时间重试，直到成功或该日期过去。
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>绑定模板</legend>
+    <div class="row2">
+      <div class="field">
+        <label for="list_template_id">场地清单模板（可选）</label>
+        <select id="list_template_id" name="list_template_id">
+          <option value="">— 不用（直接按勾选的场地 ID 提交）—</option>
+          {% for t in templates_list if t['kind'] == 'list' %}
+          <option value="{{ t['id'] }}" {% if task['list_template_id'] == t['id'] or (is_new and not task['list_template_id'] and loop.first) %}selected{% endif %}>{{ t['name'] }}</option>
+          {% endfor %}
+        </select>
+        <div class="hint">仅用于补充场地元信息（是否需要审批）；不绑定也能正常下单。</div>
+      </div>
+      <div class="field">
+        <label for="order_template_id">下单模板<span class="req">*</span></label>
+        <select id="order_template_id" name="order_template_id">
+          <option value="">— 请选择 —</option>
+          {% for t in templates_list if t['kind'] == 'order' %}
+          <option value="{{ t['id'] }}" {% if task['order_template_id'] == t['id'] or (is_new and not task['order_template_id'] and loop.first) %}selected{% endif %}>{{ t['name'] }}</option>
+          {% endfor %}
+        </select>
+        {% set order_tpls = templates_list | selectattr('kind', 'equalto', 'order') | list %}
+        {% if not order_tpls %}
+        <div class="hint" style="color:#c0392b">
+          还没有下单模板。下单模板必须来自你真实的提交请求——去<a href="/settings">设置页</a>用「一键导入」粘一条 cURL 就会自动生成。
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </fieldset>
+
+  <div class="actions" style="margin-top:8px">
+    <button class="btn primary" type="submit">保存</button>
+    <a class="btn" href="/tasks">取消</a>
+  </div>
+</form>
+
+<script>
+(function () {
+  var dateInput = document.getElementById('target_date');
+  var start = document.getElementById('slot_start');
+  var end = document.getElementById('slot_end');
+  var out = document.getElementById('auto_name');
+  if (!dateInput || !start || !end || !out) return;
+
+  function hhmm(value, fallback) {
+    var m = String(value || '').match(/(\d{1,2}):(\d{2})/);
+    if (!m) return fallback;
+    return ('0' + m[1]).slice(-2) + ':' + m[2];
+  }
+
+  function refresh() {
+    if (!dateInput.value) { out.textContent = '（请选择预约日期）'; return; }
+    out.textContent = dateInput.value + ' ' +
+      hhmm(start.value, '19:00') + '-' + hhmm(end.value, '20:00');
+  }
+
+  [dateInput, start, end].forEach(function (el) {
+    el.addEventListener('input', refresh);
+    el.addEventListener('change', refresh);
+  });
+  refresh();
+})();
+</script>
+{% endblock %}

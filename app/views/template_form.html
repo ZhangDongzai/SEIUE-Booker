@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}新建模板{% else %}编辑模板{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if is_new %}新建模板{% else %}编辑：{{ tpl['name'] }}{% endif %}</h1>
+    <p class="sub">
+      {% if tpl['kind'] == 'order' %}下单模板：真实提交预约的请求，请把具体值换成占位符。{% else %}查询模板：获取某天可用场地与时段。{% endif %}
+    </p>
+  </div>
+  <a class="btn" href="/templates">返回列表</a>
+</div>
+
+{% if warnings %}
+<div class="toast err">
+  解析提示：<br>
+  {% for w in warnings %}· {{ w }}<br>{% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>① 粘贴 cURL 自动解析</h2>
+  <form method="post" action="/templates/parse">
+    <input type="hidden" name="kind" value="{{ tpl['kind'] }}">
+    <input type="hidden" name="name" value="{{ tpl['name'] or '' }}">
+    <div class="field">
+      <textarea name="raw" rows="6" placeholder="curl 'https://chalk-c3.seiue.com/api/...' \
+  -H 'accept: application/json' \
+  -H 'cookie: ...' \
+  --data-raw '{...}' --compressed"></textarea>
+      <div class="hint">只支持 bash 形式的 cURL（Chrome/Edge 的「Copy as cURL (bash)」）。解析会覆盖下方内容。</div>
+    </div>
+    <button class="btn" type="submit">解析并填入下方</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>② 确认并保存</h2>
+  <form method="post" action="/templates/save">
+    <input type="hidden" name="id" value="{{ tpl['id'] or '' }}">
+    <div class="row3">
+      <div class="field">
+        <label for="name">模板名称<span class="req">*</span></label>
+        <input type="text" id="name" name="name" value="{{ tpl['name'] or '' }}" placeholder="如：场馆列表 / 提交预约" required>
+      </div>
+      <div class="field">
+        <label for="kind">类型</label>
+        <select id="kind" name="kind">
+          <option value="list" {% if tpl['kind'] != 'order' %}selected{% endif %}>查询（list）</option>
+          <option value="order" {% if tpl['kind'] == 'order' %}selected{% endif %}>下单（order）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="method">方法</label>
+        <input type="text" id="method" name="method" value="{{ tpl['method'] or 'GET' }}" placeholder="GET / POST">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="url">URL<span class="req">*</span></label>
+      <input type="text" id="url" name="url" value="{{ tpl['url'] or '' }}" class="mono" placeholder="{{ ph_url_example }}" required>
+      <div class="hint">支持占位符，例如日期 <span class="mono">{{ ph_date }}</span>、场地 ID <span class="mono">{{ ph_venue_id }}</span>。</div>
+    </div>
+
+    <div class="field">
+      <label for="headers">请求头（JSON 对象）</label>
+      <textarea id="headers" name="headers" rows="7">{{ tpl['headers'] or '{}' }}</textarea>
+      <div class="hint">Cookie 等全局头可留空，程序会自动合并「设置」中导入的会话头；这里的同名头优先级更高。</div>
+    </div>
+
+    <div class="field">
+      <label for="body">请求体</label>
+      <textarea id="body" name="body" rows="8" placeholder="{{ ph_body_example }}">{{ tpl['body'] or '' }}</textarea>
+      <div class="hint">
+        类型感知：<span class="mono">"{{ ph_venue_id }}"</span> 在变量为数字时会输出不带引号的数字。
+        常用占位符：{{ ph_date }}、{{ ph_slot_start }}、{{ ph_venue_name }}、{{ ph_slot_id }}、{{ ph_ts }}。
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="note">备注</label>
+      <input type="text" id="note" name="note" value="{{ tpl['note'] or '' }}" placeholder="记录这条请求来自哪个操作">
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" type="submit">保存模板</button>
+      <a class="btn" href="/templates">取消</a>
+    </div>
+  </form>
+</div>
+
+{% if not is_new %}
+<div class="card">
+  <h2>③ 探测（仅查询类）</h2>
+  <p class="small muted">
+    {% if tpl['kind'] == 'order' %}
+      下单模板不支持直接探测，避免误下单。请用任务的「演练模式」验证解析，再手动执行一次真实提交。
+    {% else %}
+      用一个示例上下文（未来第 7 天 19:00、场地 ID 1）真实发送一次，用于确认会话有效与响应结构。
+    {% endif %}
+  </p>
+  {% if tpl['kind'] != 'order' %}
+  <form method="post" action="/templates/{{ tpl['id'] }}/probe">
+    <button class="btn" type="submit">发送一次探测请求</button>
+  </form>
+  {% endif %}
+
+  {% if probe %}
+  <div style="margin-top:14px">
+    <div class="small">
+      状态：<span class="badge {% if probe.status >= 200 and probe.status < 300 %}ok{% else %}fail{% endif %}">HTTP {{ probe.status }}</span>
+      · 耗时 {{ probe.duration_ms }} ms
+      {% if probe.error %}· <span style="color:#c0392b">{{ probe.error }}</span>{% endif %}
+    </div>
+    <div class="small muted mono" style="margin:6px 0 10px;word-break:break-all">{{ probe.url }}</div>
+    {% if probe.pretty %}
+      <div class="small muted" style="margin-bottom:4px">格式化 JSON：</div>
+      <pre class="code">{{ probe.pretty }}</pre>
+    {% elif probe.text %}
+      <div class="small muted" style="margin-bottom:4px">原始响应（截断）：</div>
+      <pre class="code">{{ probe.text }}</pre>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
