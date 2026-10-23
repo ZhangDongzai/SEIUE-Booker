@@ -281,6 +281,14 @@ def test_core() -> None:
           render.task_target_date({"target_date": "", "day_offset": 2})
           == today + timedelta(days=2))
 
+    # 任务放置几天后 day_offset 会过时；渲染必须只认 target_date，否则提交到错误的一天
+    drift = render.build_ctx(
+        {"target_date": "2026-11-05", "day_offset": 0, "slot_start": "17:30",
+         "slot_end": "18:30", "split_minutes": 0, "venue_ids": "2953"},
+        datetime(2026, 10, 20, 10, 0, tzinfo=config.TZ))
+    check("渲染优先 target_date（不被 day_offset 带偏）",
+          drift["date"] == "2026-11-05", drift["date"])
+
     ts_near = probe_engine.next_occurrence({"id": 1, "target_date": near,
                                             "open_time": "00:00:00"})
     check("窗口内 → 立即执行", ts_near is not None and abs(ts_near - now_ts) < 5, str(ts_near))

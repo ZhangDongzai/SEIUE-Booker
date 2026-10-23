@@ -1,4 +1,29 @@
-"""渲染与解析：占位符替换、响应字段提取、候选场地/时段匹配。"""
+"""渲染与解析层：把「任务行 + 时间」变成一次真实请求。
+
+三件事，按调用顺序：
+1. `build_ctx()`      生成占位符上下文（日期、时段、人数、场地…），见下方清单；
+2. `render_str/body/headers()`  把模板里的 `{{name}}` 替换成实际值；
+3. `get_path()/candidates_from_task()`  解析响应、按顺序生成候选场地。
+
+占位符清单（模板里可直接用）
+--------------------------
+| 名称 | 例 | 说明 |
+| --- | --- | --- |
+| `date` / `date_compact` / `date_slash` / `date_cn` | `2026-10-21` / `20261021` / `2026/10/21` / `2026年10月21日` | 目标日期 |
+| `weekday` / `weekday_cn` | `3` / `周三` | 星期 |
+| `slot_start` / `slot_end` | `17:30` | 时分 |
+| `slot_start_full` / `slot_end_full` | `17:30:00` | 时分秒 |
+| `datetime_start` / `datetime_end` | `2026-10-21 17:30:00` | 日期+时间 |
+| `date_ranges` | `{"start_at":…,"end_at":…}` | **裸 JSON**，不要加引号 |
+| `time_ranges` | `[{"start_at":…,"end_at":…}]` | **裸 JSON**，不要加引号 |
+| `order_type` / `capacity` / `description` | `single_day` / `2` / `打球` | 下单参数 |
+| `venue_order_id` / `venue_id` | `2953` | 当前候选场地 ID |
+| `venue_name` / `venue_num` / `slot_id` | — | 候选补充信息 |
+| `ts` / `ts_ms` / `uuid` / `nonce` / `rerun` / `now` | — | 时间戳与随机量 |
+
+`{{x}}` 的替换是**类型感知**的：上下文里是数字/对象时输出裸值，是字符串时按 JSON 转义，
+所以 `"capacity":"{{capacity}}"` 会变成 `"capacity":2` 而不是 `"2"`。
+"""
 from __future__ import annotations
 
 import json
@@ -40,11 +65,13 @@ def _get(obj: Any, key: str, default: Any = "") -> Any:
     return default if value is None else value
 
 
-def task_target_date(task: Any) -> Optional[date]:
+def task_target_date(task: Any, today: Optional[date] = None) -> Optional[date]:
     """任务的目标预约日期。
 
     新模型直接存 `target_date`（YYYY-MM-DD）；旧数据没有该字段时，
-    退回「今天 + day_offset」换算，保证升级后老任务依然有明确目标。
+    退回「基准日 + day_offset」换算，保证升级后老任务依然有明确目标。
+
+    `today` 用于测试或补算历史上下文；不传则取本机今天。
     """
     raw = str(_get(task, "target_date", "") or "").strip()
     if raw:
@@ -56,7 +83,8 @@ def task_target_date(task: Any) -> Optional[date]:
         offset = int(_get(task, "day_offset", 0) or 0)
     except (TypeError, ValueError):
         offset = 0
-    return datetime.now(config.TZ).date() + timedelta(days=offset)
+    base = today or datetime.now(config.TZ).date()
+    return base + timedelta(days=offset)
 
 
 def auto_task_name(task: Any) -> str:
@@ -101,9 +129,13 @@ def split_time_ranges(date_str: str, start: str, end: str, step_minutes: int = 0
 
 
 def build_ctx(task: Any, now: Optional[datetime] = None, extra: Optional[dict] = None) -> dict:
+    """把任务行渲染成占位符上下文。
+
+    日期只认 `target_date`（旧数据没有该字段时才退回「今天 + day_offset」）。
+    如果按 day_offset 现算，任务放置几天后目标日期会跟着漂移，提交到错误的一天。
+    """
     now = now or datetime.now(config.TZ)
-    offset_days = int(_get(task, "day_offset", 0) or 0)
-    target = (now + timedelta(days=offset_days)).date()
+    target = task_target_date(task, today=now.date()) or now.date()
     date_str = target.strftime("%Y-%m-%d")
 
     slot_start_full = _pad_time(str(_get(task, "slot_start", "19:00") or "19:00"))

@@ -6,7 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 APP_NAME = "希悦自动订场"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent

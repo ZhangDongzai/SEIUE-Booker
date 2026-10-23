@@ -1,4 +1,19 @@
-"""SQLite 访问层。单文件数据库，WAL 模式，每次操作独立连接。"""
+"""SQLite 访问层：全项目唯一碰数据库的地方。
+
+五张表
+------
+    settings   键值对：会话头、passport cookie、场地缓存、上次自检/续期结果
+    templates  请求模板：kind=list（查询）或 order（下单），URL/头/体均为占位符文本
+    tasks      预约任务：目标日期、时段、场地白名单、重试策略、演练开关
+    runs       一次执行：触发方式、计划/开始/结束时间、结果、解析出的上下文快照
+    attempts   执行中的每一次 HTTP 请求：URL、请求头、请求体、状态码、响应片段
+
+约定
+----
+* 每次操作开一个新连接（WAL 允许读写并发），用完显式 close，不共享连接；
+* `init_db()` 里做轻量迁移：新增列用 `ALTER TABLE ADD COLUMN`，老数据按 day_offset 回填 target_date；
+* 时间统一用 `now_iso()`（带时区的 ISO 字符串），方便直接显示。
+"""
 from __future__ import annotations
 
 import json
@@ -385,6 +400,7 @@ def task_form_defaults() -> dict:
 
 
 def save_task(data: dict, task_id: Optional[int] = None) -> int:
+    """新增或更新任务；`TASK_COLUMNS` 之外字段一律忽略（防止表单里塞脏字段）。"""
     ts = now_iso()
     values = [data.get(k, "") for k in TASK_COLUMNS]
     if task_id:

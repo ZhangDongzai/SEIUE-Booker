@@ -1,4 +1,21 @@
-"""调度与执行引擎：时钟校准 → 预热解析 → 到点提交 → 判定 → 重试 → 留痕。"""
+"""调度与执行引擎。
+
+三个常驻协程
+------------
+* `_token_keeper`  每 `TOKEN_CHECK_SECONDS` 检查一次令牌，快过期就换新；
+* `_worker`        每个启用任务一个：算下次时刻 → 睡到点 → 执行 → 再算；
+* `_loop_monitor`（在 main.py）盯事件循环是否被卡住。
+
+时间模型
+--------
+站点时间与手机时间可能差几秒，`server_now()` 返回「校准过的站点时间」，
+所有调度判断都用它；`now_local()` 才是本机时间。
+
+一次执行（`_execute`）的固定顺序
+------------------------------
+    渲染上下文 → 可选查询模板 → 生成候选场地 → 确保令牌 → 演练? → 下单循环 → 落库
+    成功后停用任务；失败/演练则排 `RETRY_SECONDS` 后重试（见 finally）。
+"""
 from __future__ import annotations
 
 import asyncio
@@ -237,16 +254,19 @@ class Engine:
         if self._client is None:
             return
         try:
+            # Date 头只精确到秒，取「请求发出」与「响应收到」的中点，削弱 RTT 带来的偏差
+            started = time.time()
             resp = await self._client.head(config.SITE + "/", timeout=5.0)
+            received = time.time()
             date_header = resp.headers.get("date")
             if not date_header:
                 return
             server_ts = parsedate_to_datetime(date_header).timestamp()
-            # 用响应前后中点削弱 RTT 影响
-            self._offset = server_ts - time.time()
+            self._offset = server_ts - (started + received) / 2
             self._offset_at = time.time()
             self._offset_ok = True
-            log.info("clock calibrated: offset=%.3fs", self._offset)
+            log.info("clock calibrated: offset=%.3fs rtt=%.0fms",
+                     self._offset, (received - started) * 1000)
         except Exception as exc:  # 网络异常不应影响主流程
             log.warning("clock calibration failed: %s", exc)
 
@@ -427,6 +447,7 @@ class Engine:
             seq = 0
             status, message = "failed", ""
             try:
+                # ① 渲染上下文：把任务行变成 date / time_ranges / capacity 等占位符
                 ctx = render.build_ctx(task, self.now_local())
                 extras = render.build_extras(str(task["extras"] or "[]"))
                 list_tpl = store.get_template(task["list_template_id"])
@@ -435,6 +456,7 @@ class Engine:
                 candidates = render.candidates_from_task(task)
                 resolved["candidates_from_config"] = candidates[:30]
 
+                # ② 可选：先跑查询模板（拿时段余量等），失败不影响下单
                 if list_tpl is not None:
                     info = await self._call(list_tpl, ctx)
                     seq += 1
@@ -450,7 +472,7 @@ class Engine:
                 else:
                     resolved["list"] = {"note": "未绑定查询模板，直接按任务里配置的场地 ID 提交"}
 
-                # 用场地清单补齐元信息（是否需要审批、窗口天数）
+                # ③ 用场地清单补齐元信息（是否需审批、窗口天数），仅用于展示与提示
                 meta = {str(v.get("id")): v for v in store.get_venues()}
                 for cand in candidates:
                     key = str(cand.get("venue_order_id") or cand.get("venue_id") or "")
@@ -484,6 +506,7 @@ class Engine:
                 if trigger == "schedule" and planned_server is not None:
                     await self._sleep_until_precise(planned_server - 0.2)
 
+                # ④ 演练模式：只走一遍候选与令牌，不提交任何 POST，直接算成功
                 if int(task["dry_run"] or 0) == 1:
                     labels = "、".join(str(c.get("venue_name")) for c in candidates[:5])
                     status = "success"
@@ -494,6 +517,7 @@ class Engine:
                 if order_tpl is None:
                     raise RuntimeError("未绑定下单模板")
 
+                # ⑤ 正式下单：外层是轮次，内层按勾选顺序逐块场地尝试，成功即停
                 rounds = max(1, int(task["max_attempts"] or 1))
                 interval = max(0, int(task["interval_ms"] or 0)) / 1000.0
                 deadline = time.time() + config.MAX_RUN_SECONDS

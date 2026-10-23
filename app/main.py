@@ -1,4 +1,23 @@
-"""Web 层：页面路由、表单处理、鉴权与生命周期。"""
+"""Web 层：页面路由、表单处理、鉴权与生命周期。
+
+路由地图（同一个文件里按功能分区，搜索分区标题即可跳转）
+----------------------------------------------------
+    鉴权    /login /logout            口令登录（未设 APP_PASSWORD 时直通）
+    仪表盘  /  /healthz               当前令牌、任务概览、最近执行
+    任务    /tasks /tasks/new /tasks/{id}/edit
+            /tasks/save /toggle /delete /run
+    模板库  /templates /new /{id}/edit
+            /templates/parse（cURL 解析）/save /delete /probe
+    记录    /runs /runs/{id} /runs/{id}/delete
+    设置    /settings  以及 session / quickstart / venues / check /
+            passport-cookie / refresh-now / calibrate
+
+约定
+----
+* 所有 handler 都返回 Response 实例，重定向统一用 `redirect(path, ok=, err=)`；
+* 页面渲染统一走 `page()`，它会补上 ok/err 提示、版本号与今日日期；
+* 任何会触发网络或磁盘的操作都写成 async，避免阻塞事件循环。
+"""
 from __future__ import annotations
 
 import asyncio
