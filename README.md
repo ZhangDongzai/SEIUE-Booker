@@ -1,115 +1,112 @@
 # 希悦自动订场
 
-针对校园场馆系统（`chalk-c3.seiue.com`）的自托管预约助手：网页界面配置场地与时段，在可预约窗口内自动提交请求，并留下完整请求/响应痕迹。
+针对校园场馆系统（`chalk-c3.seiue.com`）的自托管预约助手：在网页里配置日期、时段、场地，
+程序在可预约窗口开启时自动提交，并把每一次请求与响应完整留痕。
 
-- **接口已实测**：`POST https://api.seiue.com/scms/venue/order-venues/{场地ID}/orders`，Bearer 鉴权，窗口 7 天。见 [05](docs/05-实测接口与联调.md)。
-- **一条 cURL 完成配置**：粘贴一次真实下单请求，自动拆出会话令牌、把 URL 与请求体换成占位符。
-- **目标日期 + 窗口内立即执行**：选一个具体日期，能约就马上提交；还没进窗口就等到窗口开启那一刻。
-- **单进程自托管**：`python run.py`，8 个纯 Python 包，无数据库、无编译器、无容器。
-- **两种运行方式**：Termux 手动跑，或装 KernelSU 模块（开机自启 + 网页控制台）。
-- **令牌自动续期**：配一次 `passport` 会话 Cookie，之后免密换新。见 [06](docs/06-令牌自动续期.md)。
+- **单进程、纯 Python**：8 个依赖全是 `py3-none-any`，不需要数据库服务、不需要编译器、不需要容器。
+- **一条 cURL 完成接入**：粘贴一次真实下单请求，自动拆出令牌、把 URL 与请求体换成占位符。
+- **目标日期驱动**：选一个具体日期，在窗口内就立刻执行，没进窗口就等到窗口开启那一刻。
+- **令牌自动续期**：填一次 `passport` 域会话 Cookie，之后快过期时免密换新。
+- **两种跑法**：Termux / 电脑直接 `python run.py`；或装 KernelSU 模块，开机自启 + 模块页内嵌控制台。
 
 ## 快速开始
 
-### 方式一：Termux / 电脑
-
 ```bash
-cd badminton-booker
 python -m pip install -r requirements.txt
 python run.py
 ```
 
-浏览器打开 `http://127.0.0.1:8080`。手机上的完整步骤见 [07 Termux 部署](docs/07-Termux%20部署.md)。
+浏览器打开 `http://127.0.0.1:8080`，然后：
 
-### 方式二：KernelSU 模块（开机自启）
+1. **设置 → 一键导入**：粘贴「提交预约」那条 POST 的 cURL（浏览器 F12 → 网络 → 右键 Copy as cURL）
+2. **设置 → 会话 Cookie**：粘贴 `passport.seiue.com` 域的会话 Cookie，保存后会自动换令牌、同步场地、自检
+3. **任务 → 新建**：选预约日期与时段、勾选场地、填人数；先开「演练模式」跑一次确认无误
+4. 取消演练、保存启用
 
-1. KernelSU 管理器 → 模块 → 从本地安装 `badminton-booker-ksu-v1.0.0.zip` → 重启；
-2. 打开该模块的网页控制台，点「安装依赖」；
-3. 点「启动」，再点「打开完整界面」。
+## 打包 KernelSU 模块
 
-详见 [08 KernelSU 模块](docs/08-KernelSU%20模块.md)。
+```bash
+python build-module.py
+# → dist/badminton-booker-ksu-v1.0.1.zip
+```
 
-### 首次配置
+刷入：KernelSU 管理器 → 模块 → 从本地安装 → 重启。详见 [06 模块与打包](docs/06-模块与打包.md)。
 
-设置 →「一键导入」粘贴下单那条 POST 的 cURL → 配置会话 Cookie（会自动同步场地并自检）→ 建任务（先开「演练模式」跑一次）。
+## 目录结构
 
-> ⚠️ 站点令牌 **24 小时过期**。配了会话 Cookie 就自动续期。
-> 本站点 Web 端不保存 refresh_token，用 `passport.seiue.com` 域的会话 Cookie 才是对的。
+```
+badminton-booker/
+├── app/                   程序本体
+│   ├── main.py            Web 路由与表单
+│   ├── webcore.py         极薄 Web 内核（基于 Starlette）
+│   ├── runner.py          调度与执行引擎
+│   ├── render.py          任务 → 请求（占位符）
+│   ├── store.py           SQLite 访问层
+│   ├── config.py          环境变量与常量
+│   ├── preset.py          预置模板 / cURL 转模板
+│   ├── curlparse.py       cURL 解析
+│   ├── tokeninfo.py       JWT 有效期解析
+│   ├── crypto.py          凭据加密
+│   ├── oauth.py           refresh_token 续期
+│   ├── passport.py        会话 Cookie 免密续期
+│   ├── views/             页面模板
+│   └── static/            样式与脚本
+├── kernelsu-module/       KernelSU 模块源码
+│   ├── module.prop        模块信息（名称/版本/运行状态）
+│   ├── service.sh         开机自启 + 状态心跳 + 看门狗
+│   ├── ctl.sh             启停/状态/诊断/自检
+│   ├── post-fs-data.sh    早期初始化
+│   ├── customize.sh       安装时权限处理
+│   ├── uninstall.sh       卸载清理
+│   └── webroot/index.html 模块网页控制台
+├── docs/                  文档（按架构分层组织）
+├── tests/                 冒烟测试（208 项 + WebUI 60 项）
+├── build-module.py        打包脚本
+├── run.py                 本地启动器
+├── requirements.txt       运行时依赖
+└── .env.example           环境变量示例
+```
 
 ## 文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [01 需求说明](docs/01-需求说明.md) | 功能清单、模板变量表、已确认事实、验收标准 |
-| [02 架构设计](docs/02-架构设计.md) | 模块划分、数据模型、执行时序、精度策略、风险 |
-| [03 依赖与部署](docs/03-依赖与部署.md) | 依赖清单、前台/服务化部署（systemd）、运维与排障 |
-| [04 抓包与配置](docs/04-抓包与模板配置指南.md) | 怎么复制那一条 cURL、怎么核对 |
-| [05 实测接口](docs/05-实测接口与联调.md) | 实测的接口/字段/状态码、审批流、每日运维 |
-| [06 令牌自动续期](docs/06-令牌自动续期.md) | 续期通道（passport 会话 Cookie）、校验与排错 |
-| [07 Termux 部署](docs/07-Termux%20部署.md) | 手机运行：环境、安装、启动、访问、保活、验证 |
-| [08 KernelSU 模块](docs/08-KernelSU%20模块.md) | 模块安装、开机自启、网页控制台、配置与排查 |
-
-## 目录结构
-
-```
-run.py             启动器（打印访问地址、端口检测）
-termux-setup.sh    Termux 一键安装：装依赖 + 自检
-kernelsu-module/   KernelSU 模块源码（开机自启 + 网页控制台）
-app/
-├── main.py        Web 路由、表单、鉴权
-├── webcore.py     极薄 Web 内核（基于 Starlette）
-├── config.py      环境变量与路径
-├── crypto.py      会话加密（标准库实现）
-├── curlparse.py   cURL → 请求定义
-├── tokeninfo.py   JWT 有效期解析
-├── preset.py      默认模板 / cURL 一键转模板
-├── store.py       SQLite 访问层（含自动补列升级）
-├── render.py      占位符渲染 / 字段提取 / 候选生成
-├── runner.py      时钟校准、任务协程、执行编排
-├── views/         Jinja2 页面
-└── static/        样式与脚本（无 CDN 依赖）
-data/              运行时生成：app.db、secret.key（需备份）
-docs/              项目文档
-tests/             端到端冒烟测试（本地假站点）
-```
-
-## 核心概念
-
-- **会话**：从 cURL 里提取的 `Authorization: Bearer …` 与 `x-role`/`x-school-id` 等上下文头，加密落盘；身份只此一处，模板不存。
-- **下单模板**：`POST …/order-venues/{{venue_order_id}}/orders`，请求体 5 个字段用占位符注入。
-- **任务**：场地白名单（勾选顺序即尝试顺序）+ 目标日期 + 时段；窗口内立即执行，窗口外等到开启时刻。
-- **演练模式**：只列将尝试的场地、不提交，用来验证配置。
+| [01 架构总览](docs/01-架构总览.md) | 分层图、两条主线、模块职责、设计取舍、代码地图 |
+| [02 运行与部署](docs/02-运行与部署.md) | 依赖安装、启动参数、常驻、环境变量、数据与备份 |
+| [03 使用指南](docs/03-使用指南.md) | 首次配置、页面地图、任务字段、模板与记录 |
+| [04 调度与执行](docs/04-调度与执行.md) | 时钟校准、执行时机决策、下单流程、令牌续期 |
+| [05 数据与接口](docs/05-数据与接口.md) | 表结构、占位符全集、站点接口实测 |
+| [06 模块与打包](docs/06-模块与打包.md) | KernelSU 模块结构、WebUI 契约、打包与排错 |
 
 ## 环境变量
 
+全部可选，写进 `.env` 或直接用环境变量传入。
+
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `APP_HOST` | 0.0.0.0 | 监听地址。Termux 上想只让本机访问就设 `127.0.0.1` |
-| `APP_PORT` | 8080 | 监听端口 |
-| `APP_PASSWORD` | 空 | 访问口令，留空则免登录 |
-| `APP_TZ` | Asia/Shanghai | 时区 |
-| `DATA_DIR` | 项目内 `data/` | 数据目录（`app.db` 与 `secret.key`） |
-| `APP_PROXY` | 空 | 默认直连；必须过代理时才填 |
-| `HTTP_TIMEOUT` | 10 | 单请求超时（秒） |
-| `TOKEN_REFRESH_SKEW` | 600 | 令牌剩余不足多少秒就自动续期 |
-| `TOKEN_CHECK_SECONDS` | 300 | 后台巡检令牌的间隔（秒） |
-| `OAUTH_CLIENT_ID` | 内置 | 换 token 用的公共 client；学校轮换时覆盖 |
-| `OAUTH_CLIENT_SECRET` | 内置 | 同上 |
-| `LOG_LEVEL` | INFO | 日志级别 |
+| `APP_HOST` | `0.0.0.0` | 监听地址，`127.0.0.1` 表示只允许本机 |
+| `APP_PORT` | `8080` | 监听端口 |
+| `DATA_DIR` | 项目内 `data/` | 数据目录（`app.db` + `secret.key`） |
+| `APP_PASSWORD` | 空 | 访问口令，留空则不鉴权 |
+| `APP_TZ` | `Asia/Shanghai` | 时区 |
+| `APP_PROXY` | 空 | 出网代理；默认直连，不读系统 `HTTP(S)_PROXY` |
+| `MAX_ORDER_DAYS` | `7` | 站点可预约窗口天数 |
+| `RETRY_SECONDS` | `600` | 窗口内未成功后的重试间隔 |
+| `TOKEN_REFRESH_SKEW` | `600` | 令牌剩余不足多少秒就续期 |
+| `TOKEN_CHECK_SECONDS` | `300` | 后台令牌巡检间隔 |
+| `HTTP_TIMEOUT` | `10` | 单次请求超时（秒） |
+| `LOG_LEVEL` | `INFO` | 日志级别 |
 
-## 本地开发与测试
+## 边界说明
+
+- 站点令牌 **24 小时过期**。不配会话 Cookie 也能用，但要每天重贴一次 cURL；配了则自动续期。
+- 预约提交后状态是 **`initiated`（待审批）**，需要本人到「我的预约」确认，程序不代审批。
+- 站点没有「时段余量」接口，所以程序按配置的场地顺序直接提交，失败自动换下一块。
+- 仅供个人预约使用；请遵守学校场馆管理规定。
+
+## 测试
 
 ```bash
-python -m venv .venv
-.venv/Scripts/pip install -r requirements.txt      # Windows
-DATA_DIR=./data .venv/Scripts/python -m uvicorn app.main:app --reload --port 8080
-.venv/Scripts/python tests/smoke_test.py           # 73 项端到端检查（本地假站点）
+python tests/smoke_test.py          # 208 项：解析/渲染/存储/HTTP/页面/执行
+node tests/webui_exec_test.js       # 60 项：模块控制台的 KernelSU 桥接兼容性
 ```
-
-## 注意事项
-
-- 预约窗口为未来 7 天，抢窗口最后一天请把「日期偏移」设为 7。
-- 6 块羽毛球场地均为 `need_approval = true`：程序提交成功后，**仍需你到「我的预约」审批**。
-- 场地开放时间实测为工作日 `16:35–18:30`，超出时段的请求大概率被拒。
-- NAS 需关闭休眠，否则可能错过放号时刻；建议接入 UPS。
-- 本工具仅用于本人账号的本人预约，不含验证码破解、多账号代抢、代理池或高频轰炸。请遵守学校场馆管理规定。
